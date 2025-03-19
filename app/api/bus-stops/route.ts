@@ -9,14 +9,26 @@ const supabase = createClient(
 
 export async function GET() {
   try {
-    // Fetch all bus stops (id + name) from `bus_Stop` table
-    const { data, error } = await supabase.from("bus_stops").select("id, name");
-
+    // Fetch all depots with latitude and longitude
+    const { data, error } = await supabase
+      .from("depots")
+      .select("id, name, latitude, longitude")
+      .not('latitude', 'is', null)
+      .not('longitude', 'is', null);
+    
     if (error) throw error;
-
-    return NextResponse.json(data, { status: 200 });
+    
+    // Transform the data to match the format expected by the frontend
+    const transformedData = data.map(depot => ({
+      id: depot.id,
+      name: depot.name,
+      lat: depot.latitude,  // Map latitude to lat for frontend compatibility
+      lng: depot.longitude  // Map longitude to lng for frontend compatibility
+    }));
+    
+    return NextResponse.json(transformedData, { status: 200 });
   } catch (error) {
-    console.error("Error fetching bus stops:", error);
+    console.error("Error fetching depots:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }

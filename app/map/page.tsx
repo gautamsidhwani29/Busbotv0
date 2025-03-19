@@ -1,151 +1,177 @@
-"use client";
-
+"use client"
 import { useEffect, useState, useRef } from "react";
+import { createClient } from "@supabase/supabase-js";
+
+// Initialize Supabase client
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 const MapPage = () => {
   const [busStops, setBusStops] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
   const mapContainerRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const routingControlRef = useRef(null);
-  const leafletLoaded = useRef(false);
 
-  // Fetch bus stops
   useEffect(() => {
     const fetchBusStops = async () => {
+      setIsLoading(true);
+      setError(null);
       try {
-        const response = await fetch("/api/bus_stops");
-        const data = await response.json();
-        setBusStops(data);
-        console.log(data)
+        const { data, error } = await supabase.from("bus_stops").select("*");
+        if (error) throw error;
+        setBusStops(data || []);
       } catch (error) {
+        setError("Failed to load bus stops.");
         console.error("Error fetching bus stops:", error);
+      } finally {
+        setIsLoading(false);
       }
     };
-
     fetchBusStops();
   }, []);
 
-  // Initialize map on client-side only
   useEffect(() => {
-    // Only run in browser environment
-    if (typeof window === 'undefined') return;
+    // Don't proceed if we're in SSR or the container ref isn't available
+    if (typeof window === "undefined" || !mapContainerRef.current) return;
 
-    // Clean up function to handle HMR properly
-    const cleanupMap = () => {
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
-        mapInstanceRef.current = null;
-      }
-      if (routingControlRef.current) {
-        routingControlRef.current = null;
-      }
-    };
-
-    // Initialize map
+    let L;
+    
     const initMap = async () => {
       try {
-        // Clean up existing map instance first
-        cleanupMap();
+        // Check if there's already a map instance - if so, remove it
+        if (mapInstanceRef.current) {
+          mapInstanceRef.current.remove();
+          mapInstanceRef.current = null;
+        }
         
-        // Import Leaflet and related modules
-        const L = await import('leaflet');
-        await import('leaflet/dist/leaflet.css');
+        // Check if the container already has a Leaflet map
+        if (mapContainerRef.current._leaflet_id) {
+          console.log("Container already has a map, cleaning up...");
+          // Reset the container to ensure it's clean
+          mapContainerRef.current.innerHTML = '';
+          delete mapContainerRef.current._leaflet_id;
+        }
+
+        // Import Leaflet
+        L = await import("leaflet");
+        await import("leaflet/dist/leaflet.css");
+        await import("leaflet-routing-machine");
         
-        // We need to create a separate import for Leaflet Routing Machine
-        // This ensures it's properly registered as a Leaflet plugin
-        const RoutingMachine = await import('leaflet-routing-machine');
+        // Create a new map instance
+        mapInstanceRef.current = L.map(mapContainerRef.current, {
+          // Explicitly set this to prevent errors
+          preferCanvas: true
+        }).setView([19.076, 72.8777], 12);
+
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          attribution:
+            '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        }).addTo(mapInstanceRef.current);
         
-        leafletLoaded.current = true;
-        
-        // Create map instance
-        if (!mapInstanceRef.current && mapContainerRef.current) {
-          mapInstanceRef.current = L.map(mapContainerRef.current).setView([19.076, 72.8777], 12);
-          
-          L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          }).addTo(mapInstanceRef.current);
-          
-          // Add bus stops if they're available
-          if (busStops.length > 0) {
-            addRoutesToMap(L);
-          }
+        // If we have bus stops, add them to the map
+        if (busStops.length > 0) {
+          addBusStopsToMap(L);
         }
       } catch (error) {
         console.error("Error initializing map:", error);
+        setError("Failed to initialize map.");
+      }
+    };
+
+    const addBusStopsToMap = (leaflet) => {
+      try {
+        if (!mapInstanceRef.current) return;
+        
+        // Remove existing routes
+        if (routingControlRef.current) {
+          mapInstanceRef.current.removeControl(routingControlRef.current);
+          routingControlRef.current = null;
+        }
+
+        const waypoints = busStops.map((stop) => 
+          leaflet.latLng(stop.latitude, stop.longitude)
+        );
+
+        routingControlRef.current = leaflet.Routing.control({
+          waypoints,
+          createMarker: (i, waypoint) =>
+            leaflet.marker(waypoint.latLng, {
+              icon: leaflet.icon({
+                iconUrl: "/bus-stop-icon.png",
+                iconSize: [25, 25],
+                iconAnchor: [12, 25],
+              }),
+            }).bindPopup(`Bus Stop ${i + 1}: ${busStops[i]?.name || "Unknown"}`),
+          routeWhileDragging: true,
+          lineOptions: { styles: [{ color: "#0066CC", weight: 4 }] },
+          show: false,
+        }).addTo(mapInstanceRef.current);
+      } catch (error) {
+        console.error("Error adding bus stops to map:", error);
       }
     };
 
     initMap();
-    
-    // Cleanup on unmount
-    return cleanupMap;
-  }, []);
 
-  // Add routes to map
-  const addRoutesToMap = async (L) => {
-    if (!mapInstanceRef.current || !L || busStops.length === 0) return;
-    
-    try {
-      // Ensure Leaflet and Routing Machine are loaded
-      if (!leafletLoaded.current) {
-        L = await import('leaflet');
-        await import('leaflet-routing-machine');
-        leafletLoaded.current = true;
+    // Cleanup on unmount
+    return () => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
       }
+    };
+  }, [mapContainerRef]); // Only depend on the container ref
+
+  // Separate useEffect for updating bus stops on the map
+  useEffect(() => {
+    if (!mapInstanceRef.current || busStops.length === 0) return;
+
+    const updateBusStops = async () => {
+      const L = await import("leaflet");
       
-      // Remove existing routing control if it exists
+      // Remove existing routes
       if (routingControlRef.current) {
         mapInstanceRef.current.removeControl(routingControlRef.current);
         routingControlRef.current = null;
       }
-      
-      const waypoints = busStops.map((stop) => L.latLng(stop.lat, stop.lng));
-      
-      // Check if Routing is available
-      if (!L.Routing) {
-        console.error("Leaflet Routing Machine not available");
-        return;
-      }
-      
+
+      const waypoints = busStops.map((stop) => 
+        L.latLng(stop.latitude, stop.longitude)
+      );
+
       routingControlRef.current = L.Routing.control({
         waypoints,
-        createMarker: (i, waypoint) => 
+        createMarker: (i, waypoint) =>
           L.marker(waypoint.latLng, {
             icon: L.icon({
-              iconUrl: "/bus-stop-icon.png",
+              iconUrl: "/images/marker-icon.png",
               iconSize: [25, 25],
               iconAnchor: [12, 25],
             }),
-          }).bindPopup(`Bus Stop ${i + 1}: ${busStops[i]?.name || ''}`),
+          }).bindPopup(`Bus Stop ${i + 1}: ${busStops[i]?.name || "Unknown"}`),
         routeWhileDragging: true,
-        lineOptions: {
-          styles: [{ color: '#0066CC', weight: 4 }]
-        },
-        show: false // Hide the routing control panel
+        lineOptions: { styles: [{ color: "#0066CC", weight: 4 }] },
+        show: false,
       }).addTo(mapInstanceRef.current);
-    } catch (error) {
-      console.error("Error adding routes to map:", error);
-    }
-  };
+    };
 
-  // Update routes when bus stops change
-  useEffect(() => {
-    if (busStops.length > 0 && mapInstanceRef.current && typeof window !== 'undefined') {
-      const updateRoutes = async () => {
-        const L = await import('leaflet');
-        addRoutesToMap(L);
-      };
-      
-      updateRoutes();
-    }
+    updateBusStops();
   }, [busStops]);
 
   return (
     <div className="relative w-full h-screen">
       <div ref={mapContainerRef} className="w-full h-screen"></div>
-      {busStops.length === 0 && (
+      {isLoading && (
         <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white p-4 rounded shadow">
           Loading bus stops...
+        </div>
+      )}
+      {error && (
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-red-500 text-white p-4 rounded shadow">
+          {error}
         </div>
       )}
     </div>

@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useRef, useEffect } from "react"
 import { cn } from "@/lib/utils"
 
@@ -10,10 +9,17 @@ interface MagneticButtonProps {
   className?: string
   strength?: number
   onClick?: () => void
+  as?: React.ElementType // Add this to allow changing the element type
 }
 
-export function MagneticButton({ children, className, strength = 30, onClick }: MagneticButtonProps) {
-  const buttonRef = useRef<HTMLButtonElement>(null)
+export function MagneticButton({ 
+  children, 
+  className, 
+  strength = 30, 
+  onClick,
+  as: Component = "div" // Default to div instead of button
+}: MagneticButtonProps) {
+  const elementRef = useRef<HTMLElement>(null)
   const [position, setPosition] = useState({ x: 0, y: 0 })
   const [isMobile, setIsMobile] = useState(false)
 
@@ -26,11 +32,11 @@ export function MagneticButton({ children, className, strength = 30, onClick }: 
     return () => window.removeEventListener("resize", checkMobile)
   }, [])
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLButtonElement>) => {
-    if (isMobile || !buttonRef.current) return
+  const handleMouseMove = (e: React.MouseEvent<HTMLElement>) => {
+    if (isMobile || !elementRef.current) return
 
-    const button = buttonRef.current
-    const rect = button.getBoundingClientRect()
+    const element = elementRef.current
+    const rect = element.getBoundingClientRect()
     const centerX = rect.left + rect.width / 2
     const centerY = rect.top + rect.height / 2
     const mouseX = e.clientX
@@ -55,8 +61,8 @@ export function MagneticButton({ children, className, strength = 30, onClick }: 
   }
 
   return (
-    <button
-      ref={buttonRef}
+    <Component
+      ref={elementRef}
       className={cn("relative transition-transform duration-100 ease-out", className)}
       style={{
         transform: `translate(${position.x}px, ${position.y}px)`,
@@ -66,7 +72,6 @@ export function MagneticButton({ children, className, strength = 30, onClick }: 
       onClick={onClick}
     >
       {children}
-    </button>
+    </Component>
   )
 }
-

@@ -68,11 +68,18 @@ const ConfirmationDialog = ({
   );
 };
 
+// Define Depot type
+type Depot = {
+  id: string;
+  name: string;
+};
+
 export function WorkerManager() {
   const [workers, setWorkers] = useState<Worker[]>([])
+  const [depots, setDepots] = useState<Depot[]>([])
   const [name, setName] = useState("")
-  const [phoneNumber, setPhoneNumber] = useState("") // Changed from phone to phoneNumber
-  const [role, setRole] = useState<string>("") 
+  const [phoneNumber, setPhoneNumber] = useState("") 
+  const [role, setRole] = useState<string>("")
   const [depotId, setDepotId] = useState("")
   const [editingId, setEditingId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -85,18 +92,52 @@ export function WorkerManager() {
 
   useEffect(() => {
     fetchWorkers()
+    fetchDepots()
   }, [])
+
+  const fetchDepots = async () => {
+    try {
+      const { data, error } = await supabase.from("depots").select("id, name").order("name")
+
+      if (error) {
+        console.error("Error fetching depots:", error)
+        throw error
+      }
+      
+      setDepots(data || [])
+    } catch (error) {
+      console.error("Error fetching depots:", error)
+      toast({
+        title: "Error",
+        description: "Failed to load depots",
+        variant: "destructive",
+      })
+    }
+  }
 
   const fetchWorkers = async () => {
     try {
-      const { data, error } = await supabase.from("workers").select("*").order("name")
+      // Join workers with depots to get depot names
+      const { data, error } = await supabase
+        .from("workers")
+        .select(`
+          *,
+          depots:depot_id(id, name)
+        `)
+        .order("name")
 
       if (error) {
         console.error("Error fetching workers:", error)
         throw error
       }
       
-      setWorkers(data || [])
+      // Format worker data with depot information
+      const formattedWorkers = data?.map(worker => ({
+        ...worker,
+        depot_name: worker.depots?.name || "Unknown Depot"
+      })) || []
+      
+      setWorkers(formattedWorkers)
     } catch (error) {
       console.error("Error fetching workers:", error)
       toast({
@@ -111,7 +152,7 @@ export function WorkerManager() {
 
   const resetForm = () => {
     setName("")
-    setPhoneNumber("") // Changed from setPhone to setPhoneNumber
+    setPhoneNumber("")
     setRole("")
     setDepotId("")
     setEditingId(null)
@@ -121,7 +162,7 @@ export function WorkerManager() {
     e.preventDefault()
 
     // Validate inputs
-    if (!name || !phoneNumber || !role || !depotId) { // Changed phone to phoneNumber
+    if (!name || !phoneNumber || !role || !depotId) {
       toast({
         title: "Error",
         description: "Please fill in all required fields",
@@ -134,22 +175,12 @@ export function WorkerManager() {
 
     try {
       if (editingId) {
-        // Create updated worker object
-        const updatedWorker = {
-          id: editingId,
-          name,
-          phone_number: phoneNumber, // Changed from phone to phone_number
-          role,
-          depot_id: depotId
-        }
-        
-        console.log(`Updating worker with ID ${editingId} in database...`, updatedWorker)
-        
+        // Update existing worker
         const { error } = await supabase
           .from("workers")
           .update({
             name,
-            phone_number: phoneNumber, // Changed from phone to phone_number
+            phone_number: phoneNumber,
             role,
             depot_id: depotId
           })
@@ -160,12 +191,8 @@ export function WorkerManager() {
           throw error
         }
 
-        console.log("Update successfully sent to database")
-        
-        // Optimistically update the UI without waiting for verification
-        setWorkers(workers.map(worker => 
-          worker.id === editingId ? updatedWorker : worker
-        ))
+        // Refresh the worker list to get updated data with depot names
+        await fetchWorkers()
 
         toast({
           title: "Success",
@@ -176,39 +203,22 @@ export function WorkerManager() {
         resetForm()
       } else {
         // Create new worker
-        console.log("Adding new worker to database:", {
-          name,
-          phone_number: phoneNumber, // Changed from phone to phone_number
-          role,
-          depot_id: depotId
-        })
-        
-        const { data, error } = await supabase
+        const { error } = await supabase
           .from("workers")
           .insert({
             name,
-            phone_number: phoneNumber, // Changed from phone to phone_number
+            phone_number: phoneNumber,
             role,
             depot_id: depotId
           })
-          .select()
 
         if (error) {
           console.error("Database insert error:", error)
           throw error
         }
 
-        console.log("Database insert response:", data)
-
-        if (data && data.length > 0) {
-          console.log("Worker added successfully to database:", data[0])
-          // Update state - immediately reflect the change in UI
-          setWorkers([...workers, data[0]])
-        } else {
-          console.log("No data returned from database insert, refreshing worker list...")
-          // If no data is returned, fetch workers again to ensure we have the latest data
-          await fetchWorkers()
-        }
+        // Refresh the worker list to get updated data with depot names
+        await fetchWorkers()
 
         toast({
           title: "Success",
@@ -235,7 +245,7 @@ export function WorkerManager() {
     
     // Set form values with worker data
     setName(worker.name)
-    setPhoneNumber(worker.phone_number || "") // Changed from phone to phone_number
+    setPhoneNumber(worker.phone_number || "")
     setRole(worker.role || "")
     setDepotId(worker.depot_id || "")
     setEditingId(worker.id)
@@ -248,16 +258,12 @@ export function WorkerManager() {
     setLoading(true)
 
     try {
-      console.log(`Deleting worker with ID ${id} from database...`)
-      
       const { error } = await supabase.from("workers").delete().eq("id", id)
 
       if (error) {
         console.error("Database delete error:", error)
         throw error
       }
-
-      console.log("Worker deleted successfully from database")
       
       // Update state - immediately reflect on UI
       setWorkers(workers.filter((worker) => worker.id !== id))
@@ -292,6 +298,13 @@ export function WorkerManager() {
     })
   }
 
+  // Find depot name based on ID
+  const getDepotName = (depotId: string | null) => {
+    if (!depotId) return "Not specified";
+    const depot = depots.find(d => d.id === depotId);
+    return depot ? depot.name : "Unknown Depot";
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -315,14 +328,23 @@ export function WorkerManager() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="depotId">Depot ID</Label>
-                <Input
-                  id="depotId"
-                  placeholder="Enter depot ID"
-                  value={depotId}
-                  onChange={(e) => setDepotId(e.target.value)}
+                <Label htmlFor="depot">Depot</Label>
+                <Select 
+                  value={depotId} 
+                  onValueChange={setDepotId}
                   required
-                />
+                >
+                  <SelectTrigger id="depot">
+                    <SelectValue placeholder="Select depot" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {depots.map((depot) => (
+                      <SelectItem key={depot.id} value={depot.id}>
+                        {depot.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="phoneNumber">Phone Number</Label>
@@ -396,7 +418,7 @@ export function WorkerManager() {
                       <TableHead>Name</TableHead>
                       <TableHead>Phone Number</TableHead>
                       <TableHead>Role</TableHead>
-                      <TableHead>Depot ID</TableHead>
+                      <TableHead>Depot</TableHead>
                       <TableHead className="w-[120px]">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -414,7 +436,7 @@ export function WorkerManager() {
                             {worker.role || "Not specified"}
                           </span>
                         </TableCell>
-                        <TableCell>{worker.depot_id || "Not specified"}</TableCell>
+                        <TableCell>{worker.depot_name || getDepotName(worker.depot_id)}</TableCell>
                         <TableCell>
                           <div className="flex space-x-1">
                             <Button 

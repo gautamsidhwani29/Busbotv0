@@ -15,6 +15,13 @@ const setupLeafletIcons = () => {
   });
 };
 
+// Create a custom depot icon
+const depotIcon = new L.Icon({
+  iconUrl: "/images/depoticon.png",
+  iconSize: [50, 50],
+  iconAnchor: [16, 32],
+  popupAnchor: [0, -32]
+});
 
   
 // Component to handle map view adjustments
@@ -141,6 +148,7 @@ const AdminMap = () => {
   const [bounds, setBounds] = useState(null);
   const [loadingRoutes, setLoadingRoutes] = useState(false);
   const [routeProgress, setRouteProgress] = useState(0);
+  const [depots, setDepots] = useState([]);
   // Number of waypoints to display at once
   const CHUNK_SIZE = 15; // Reduced for better routing performance
   
@@ -191,6 +199,31 @@ const AdminMap = () => {
     }
   };
 
+  // Fetch depots data
+  const fetchDepots = async () => {
+    try {
+      const response = await fetch("/api/depots/");
+      if (!response.ok) throw new Error("Failed to fetch depots");
+      const data = await response.json();
+      // console.log(data)
+      
+      if (data && Array.isArray(data)) {
+        // Filter out any invalid depot data
+        const validDepots = data.filter(depot => 
+          depot && typeof depot === 'object' && 
+          typeof depot.lat === 'number' && 
+          typeof depot.lng === 'number'
+        );
+        setDepots(validDepots);
+      } else {
+        console.error("Invalid depots data structure");
+        setDepots([]);
+      }
+    } catch (error) {
+      console.error("Error fetching depots:", error);
+      setDepots([]);
+    }
+  };
   
   useEffect(() => {
     // Setup Leaflet icons only on client-side
@@ -206,9 +239,13 @@ const AdminMap = () => {
       setError(null);
       
       try {
+        // Fetch routes data
         const response = await fetch("/api/optimized-routes/");
         if (!response.ok) throw new Error("Failed to fetch routes");
         const data = await response.json();
+        
+        // Also fetch depots data
+        await fetchDepots();
         
         // Handle the single object with waypoints array structure
         if (data && Array.isArray(data.waypoints) && data.waypoints.length > 0) {
@@ -253,6 +290,14 @@ const AdminMap = () => {
       fetchRoutes();
     }
   }, [mapReady]);
+
+  // Helper function to check if a waypoint is a depot
+  const isDepot = (waypoint) => {
+    return depots.some(depot => 
+      Math.abs(depot.lat - waypoint.lat) < 0.0001 && 
+      Math.abs(depot.lng - waypoint.lng) < 0.0001
+    );
+  };
 
   // Handle chunk navigation with proper cleanup
   const navigateChunk = (direction) => {
@@ -342,6 +387,7 @@ const AdminMap = () => {
                   <Marker 
                     key={`marker-${chunkIndex}-${index}`} 
                     position={[stop.lat, stop.lng]}
+                    icon={isDepot(stop) ? depotIcon : new L.Icon.Default()}
                   />
                 ))
               }
