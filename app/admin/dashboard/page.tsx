@@ -22,6 +22,7 @@ import { MagneticButton } from "@/components/ui/magnetic-button"
 import { TextSpotlight } from "@/components/ui/text-spotlight"
 import { ParticleBackground } from "@/components/ui/particle-background"
 import OptimizedRouteDisplay from "@/components/OptimizedRouteDisplay"
+import { TransportApp } from "@/components/Worker_Assignment_Component"
 
 export default function AdminDashboard() {
   const [stops, setStops] = useLocalStorage<BusStop[]>("bus-stops", busStops)
@@ -261,7 +262,7 @@ export default function AdminDashboard() {
           </TabsContent>
 
           <TabsContent value="schedule" className="fade-in">
-            <WorkerScheduler />
+            <TransportApp />
           </TabsContent>
         </Tabs>
       </CardContent>

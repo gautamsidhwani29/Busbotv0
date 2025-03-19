@@ -91,28 +91,32 @@ export function WorkerScheduler() {
   }, [])
 
   const generateSchedules = async () => {
-    // Make sure we have routes to work with
     if (routes.length === 0) {
       toast({
         title: "Error",
         description: "No routes available to schedule",
         variant: "destructive",
-      })
-      return
+      });
+      return;
     }
-
-    setGenerating(true)
-
+  
+    setGenerating(true);
+  
     try {
+      // Delete existing schedules before generating new ones
+      const { error: deleteError } = await supabase.from("schedule").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+  
+      if (deleteError) throw deleteError;
+  
       // Prepare parameters
       const peakHours = [
         [peakHoursMorningStart, peakHoursMorningEnd, peakHoursMorningFreq],
-        [peakHoursEveningStart, peakHoursEveningEnd, peakHoursEveningFreq]
-      ]
-      const morningShift = [morningShiftStart, morningShiftEnd]
-      const eveningShift = [eveningShiftStart, eveningShiftEnd]
-
-      // Calculate schedules (client-side simulation of the Python code)
+        [peakHoursEveningStart, peakHoursEveningEnd, peakHoursEveningFreq],
+      ];
+      const morningShift = [morningShiftStart, morningShiftEnd];
+      const eveningShift = [eveningShiftStart, eveningShiftEnd];
+  
+      // Generate schedules
       const { scheduledRoutes, morningEmp, eveningEmp } = calculateSchedulesAndEmployees(
         routes,
         workStart,
@@ -121,28 +125,39 @@ export function WorkerScheduler() {
         morningShift,
         eveningShift,
         requiredWorkTime
-      )
-
-      // Update state with the generated routes
-      setGeneratedSchedules(scheduledRoutes)
-      setMorningEmployees(morningEmp)
-      setEveningEmployees(eveningEmp)
-
+      );
+  
+      // Save schedules in the database
+      const scheduleEntries = scheduledRoutes.map((route) => ({
+        route_id: route.route_id,
+        schedule: route.schedule
+      }));
+  
+      const { error: insertError } = await supabase.from("schedule").insert(scheduleEntries);
+  
+      if (insertError) throw insertError;
+  
+      // Update state with the generated data
+      setGeneratedSchedules(scheduledRoutes);
+      setMorningEmployees(morningEmp);
+      setEveningEmployees(eveningEmp);
+  
       toast({
         title: "Success",
-        description: "Schedules generated successfully",
-      })
+        description: "Schedules generated and saved successfully",
+      });
     } catch (error) {
-      console.error("Error generating schedules:", error)
+      console.error("Error generating schedules:", error);
       toast({
         title: "Error",
-        description: "Failed to generate schedules",
+        description: "Failed to generate or save schedules",
         variant: "destructive",
-      })
+      });
     } finally {
-      setGenerating(false)
+      setGenerating(false);
     }
-  }
+  };
+  
 
   // Helper function to simulate the Python scheduling logic
   const calculateSchedulesAndEmployees = (routes, workStart, workEnd, peakHours, morningShift, eveningShift, requiredWorkTime) => {
