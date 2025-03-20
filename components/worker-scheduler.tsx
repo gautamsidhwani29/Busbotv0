@@ -16,26 +16,46 @@ import type { OptimizedRoute } from "@/lib/types"
 import { Slider } from "@/components/ui/slider"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 
+// Create a constant for localStorage key
+const SCHEDULER_FORM_STATE_KEY = "worker_scheduler_form_state"
+
 export function WorkerScheduler() {
   const [routes, setRoutes] = useState<OptimizedRoute[]>([])
   const [generatedSchedules, setGeneratedSchedules] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
   
+  // Default values
+  const defaultFormState = {
+    workStart: "06:00",
+    workEnd: "01:00",
+    peakHoursMorningStart: 8,
+    peakHoursMorningEnd: 10,
+    peakHoursMorningFreq: 30,
+    peakHoursEveningStart: 17,
+    peakHoursEveningEnd: 20,
+    peakHoursEveningFreq: 30,
+    morningShiftStart: 6,
+    morningShiftEnd: 14,
+    eveningShiftStart: 14,
+    eveningShiftEnd: 25, // 1 AM next day
+    requiredWorkTime: 420,
+  }
+  
   // Schedule generation parameters
-  const [workStart, setWorkStart] = useState("06:00")
-  const [workEnd, setWorkEnd] = useState("01:00")
-  const [peakHoursMorningStart, setPeakHoursMorningStart] = useState(8)
-  const [peakHoursMorningEnd, setPeakHoursMorningEnd] = useState(10)
-  const [peakHoursMorningFreq, setPeakHoursMorningFreq] = useState(30)
-  const [peakHoursEveningStart, setPeakHoursEveningStart] = useState(17)
-  const [peakHoursEveningEnd, setPeakHoursEveningEnd] = useState(20)
-  const [peakHoursEveningFreq, setPeakHoursEveningFreq] = useState(30)
-  const [morningShiftStart, setMorningShiftStart] = useState(6)
-  const [morningShiftEnd, setMorningShiftEnd] = useState(14)
-  const [eveningShiftStart, setEveningShiftStart] = useState(14)
-  const [eveningShiftEnd, setEveningShiftEnd] = useState(25) // 1 AM next day
-  const [requiredWorkTime, setRequiredWorkTime] = useState(420)
+  const [workStart, setWorkStart] = useState(defaultFormState.workStart)
+  const [workEnd, setWorkEnd] = useState(defaultFormState.workEnd)
+  const [peakHoursMorningStart, setPeakHoursMorningStart] = useState(defaultFormState.peakHoursMorningStart)
+  const [peakHoursMorningEnd, setPeakHoursMorningEnd] = useState(defaultFormState.peakHoursMorningEnd)
+  const [peakHoursMorningFreq, setPeakHoursMorningFreq] = useState(defaultFormState.peakHoursMorningFreq)
+  const [peakHoursEveningStart, setPeakHoursEveningStart] = useState(defaultFormState.peakHoursEveningStart)
+  const [peakHoursEveningEnd, setPeakHoursEveningEnd] = useState(defaultFormState.peakHoursEveningEnd)
+  const [peakHoursEveningFreq, setPeakHoursEveningFreq] = useState(defaultFormState.peakHoursEveningFreq)
+  const [morningShiftStart, setMorningShiftStart] = useState(defaultFormState.morningShiftStart)
+  const [morningShiftEnd, setMorningShiftEnd] = useState(defaultFormState.morningShiftEnd)
+  const [eveningShiftStart, setEveningShiftStart] = useState(defaultFormState.eveningShiftStart)
+  const [eveningShiftEnd, setEveningShiftEnd] = useState(defaultFormState.eveningShiftEnd)
+  const [requiredWorkTime, setRequiredWorkTime] = useState(defaultFormState.requiredWorkTime)
   
   // Stats
   const [morningEmployees, setMorningEmployees] = useState(0)
@@ -52,12 +72,86 @@ export function WorkerScheduler() {
     }))
   }
 
+  // Load saved form state from localStorage on initial mount
   useEffect(() => {
-    // Only fetch routes - we've removed the workers and schedules
+    // Only run in browser environment
+    if (typeof window !== 'undefined') {
+      try {
+        const savedFormState = localStorage.getItem(SCHEDULER_FORM_STATE_KEY)
+        if (savedFormState) {
+          const parsedState = JSON.parse(savedFormState)
+          
+          // Set all form values from localStorage
+          setWorkStart(parsedState.workStart || defaultFormState.workStart)
+          setWorkEnd(parsedState.workEnd || defaultFormState.workEnd)
+          setPeakHoursMorningStart(parsedState.peakHoursMorningStart || defaultFormState.peakHoursMorningStart)
+          setPeakHoursMorningEnd(parsedState.peakHoursMorningEnd || defaultFormState.peakHoursMorningEnd)
+          setPeakHoursMorningFreq(parsedState.peakHoursMorningFreq || defaultFormState.peakHoursMorningFreq)
+          setPeakHoursEveningStart(parsedState.peakHoursEveningStart || defaultFormState.peakHoursEveningStart)
+          setPeakHoursEveningEnd(parsedState.peakHoursEveningEnd || defaultFormState.peakHoursEveningEnd)
+          setPeakHoursEveningFreq(parsedState.peakHoursEveningFreq || defaultFormState.peakHoursEveningFreq)
+          setMorningShiftStart(parsedState.morningShiftStart || defaultFormState.morningShiftStart)
+          setMorningShiftEnd(parsedState.morningShiftEnd || defaultFormState.morningShiftEnd)
+          setEveningShiftStart(parsedState.eveningShiftStart || defaultFormState.eveningShiftStart)
+          setEveningShiftEnd(parsedState.eveningShiftEnd || defaultFormState.eveningShiftEnd)
+          setRequiredWorkTime(parsedState.requiredWorkTime || defaultFormState.requiredWorkTime)
+        }
+      } catch (error) {
+        console.error("Error loading saved form state:", error)
+        // If error loading saved state, we'll use the defaults already set
+      }
+    }
+  }, [])
+
+  // Save form state to localStorage whenever any form value changes
+  useEffect(() => {
+    // Only run in browser environment
+    if (typeof window !== 'undefined') {
+      try {
+        const formState = {
+          workStart,
+          workEnd,
+          peakHoursMorningStart,
+          peakHoursMorningEnd,
+          peakHoursMorningFreq,
+          peakHoursEveningStart,
+          peakHoursEveningEnd,
+          peakHoursEveningFreq,
+          morningShiftStart,
+          morningShiftEnd,
+          eveningShiftStart,
+          eveningShiftEnd,
+          requiredWorkTime,
+        }
+        
+        localStorage.setItem(SCHEDULER_FORM_STATE_KEY, JSON.stringify(formState))
+      } catch (error) {
+        console.error("Error saving form state:", error)
+      }
+    }
+  }, [
+    workStart,
+    workEnd,
+    peakHoursMorningStart,
+    peakHoursMorningEnd,
+    peakHoursMorningFreq,
+    peakHoursEveningStart,
+    peakHoursEveningEnd,
+    peakHoursEveningFreq,
+    morningShiftStart,
+    morningShiftEnd,
+    eveningShiftStart,
+    eveningShiftEnd,
+    requiredWorkTime,
+  ])
+
+  useEffect(() => {
+    // Fetch routes and then schedules
     supabase.from("optimized_routes").select("*").order("name")
       .then((routesResponse) => {
         if (routesResponse.error) throw routesResponse.error
-        setRoutes(routesResponse.data || [])
+        const loadedRoutes = routesResponse.data || []
+        setRoutes(loadedRoutes)
         
         // Add some dummy data if no routes found
         if (!routesResponse.data || routesResponse.data.length === 0) {
@@ -68,12 +162,54 @@ export function WorkerScheduler() {
           ];
           setRoutes(dummyRoutes);
         }
+        
+        // After loading routes, fetch existing schedules
+        return supabase.from("schedule").select("*")
+          .then((schedulesResponse) => {
+            if (schedulesResponse.error) throw schedulesResponse.error
+            
+            if (schedulesResponse.data && schedulesResponse.data.length > 0) {
+              // Get the routes that are now in state
+              const currentRoutes = loadedRoutes.length > 0 ? loadedRoutes : dummyRoutes;
+              
+              // Format the schedules to match our component's expected structure
+              const formattedSchedules = schedulesResponse.data.map(schedule => {
+                const matchingRoute = currentRoutes.find(r => r.id === schedule.route_id) || {};
+                
+                // Calculate frequency based on priority if available
+                const normalized_priority = Math.max(1, Math.min(10, matchingRoute.avg_priority || 5))
+                const frequency = Math.floor(40 - ((normalized_priority - 1) / 9) * 30)
+                
+                return {
+                  route_id: schedule.route_id,
+                  name: matchingRoute.name || `Route ${schedule.route_id.substring(0, 8)}`,
+                  avg_priority: matchingRoute.avg_priority || 5,
+                  estimated_time: matchingRoute.duration || 30,
+                  frequency: frequency,
+                  schedule: schedule.schedule || []
+                };
+              });
+              
+              setGeneratedSchedules(formattedSchedules);
+              
+              // Calculate employee counts
+              const { morningEmp, eveningEmp } = calculateEmployeeRequirements(
+                formattedSchedules,
+                [morningShiftStart, morningShiftEnd],
+                [eveningShiftStart, eveningShiftEnd],
+                requiredWorkTime
+              );
+              
+              setMorningEmployees(morningEmp);
+              setEveningEmployees(eveningEmp);
+            }
+          });
       })
       .catch((error) => {
-        console.error("Error loading routes:", error)
+        console.error("Error loading data:", error)
         toast({
           title: "Error",
-          description: "Failed to load routes data",
+          description: "Failed to load data",
           variant: "destructive",
         })
         
@@ -89,6 +225,43 @@ export function WorkerScheduler() {
         setLoading(false)
       })
   }, [])
+
+  // Helper function to calculate employee requirements
+  const calculateEmployeeRequirements = (schedules, morningShift, eveningShift, requiredWorkTime) => {
+    let totalMorningMinutes = 0;
+    let totalEveningMinutes = 0;
+
+    schedules.forEach(route => {
+      route.schedule.forEach(departureTime => {
+        const [hours, minutes] = departureTime.split(':').map(Number);
+        let hour = hours;
+
+        // Handle times after midnight
+        if (hour < parseInt(workStart.split(':')[0])) {
+          hour += 24;
+        }
+
+        const totalWorkMinutes = route.estimated_time;
+
+        // Assign to morning or evening shift
+        if (morningShift[0] <= hour && hour < morningShift[1]) {
+          totalMorningMinutes += totalWorkMinutes;
+        } else {
+          totalEveningMinutes += totalWorkMinutes;
+        }
+      });
+    });
+
+    // Calculate required employees with a buffer
+    const adjustedRequiredWorkTime = requiredWorkTime * 0.9;
+    const morningEmployees = Math.ceil(totalMorningMinutes / adjustedRequiredWorkTime);
+    const eveningEmployees = Math.ceil(totalEveningMinutes / adjustedRequiredWorkTime);
+
+    return {
+      morningEmp: morningEmployees,
+      eveningEmp: eveningEmployees
+    };
+  };
 
   const generateSchedules = async () => {
     if (routes.length === 0) {
@@ -158,7 +331,6 @@ export function WorkerScheduler() {
     }
   };
   
-
   // Helper function to simulate the Python scheduling logic
   const calculateSchedulesAndEmployees = (routes, workStart, workEnd, peakHours, morningShift, eveningShift, requiredWorkTime) => {
     // Create schedule for routes
@@ -513,12 +685,13 @@ export function WorkerScheduler() {
         </CardContent>
       </Card>
       
-      {generatedSchedules.length > 0 && (
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle>Generated Route Schedules</CardTitle>
-          </CardHeader>
-          <CardContent>
+      {/* Always display the Generated Route Schedules section */}
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle>Generated Route Schedules</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {generatedSchedules.length > 0 ? (
             <div className="rounded-md border">
               <Table>
                 <TableHeader>
@@ -575,9 +748,16 @@ export function WorkerScheduler() {
                 </TableBody>
               </Table>
             </div>
-          </CardContent>
-        </Card>
-      )}
+          ) : (
+            <div className="text-center py-8 border rounded-md">
+              <p className="text-muted-foreground">No schedules generated yet</p>
+              <p className="text-sm text-muted-foreground mt-2">
+                Click the "Generate Schedule" button above to create route schedules
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
       <Toaster />
     </div>
   );
