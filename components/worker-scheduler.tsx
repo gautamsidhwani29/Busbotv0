@@ -9,12 +9,10 @@ import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/components/ui/use-toast"
 import { Toaster } from "@/components/ui/toaster"
-import { format } from "date-fns"
 import { RefreshCw, Clock, ChevronDown, ChevronUp } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import type { OptimizedRoute } from "@/lib/types"
 import { Slider } from "@/components/ui/slider"
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 
 // Create a constant for localStorage key
 const SCHEDULER_FORM_STATE_KEY = "worker_scheduler_form_state"
@@ -145,86 +143,118 @@ export function WorkerScheduler() {
     requiredWorkTime,
   ])
 
-  useEffect(() => {
-    // Fetch routes and then schedules
-    supabase.from("optimized_routes").select("*").order("name")
-      .then((routesResponse) => {
-        if (routesResponse.error) throw routesResponse.error
-        const loadedRoutes = routesResponse.data || []
-        setRoutes(loadedRoutes)
+  // Ensure schedule is an array
+  const ensureScheduleIsArray = (schedule) => {
+    if (!schedule) return [];
+    if (Array.isArray(schedule)) return schedule;
+    // If it's a string (possibly JSON), try to parse it
+    if (typeof schedule === 'string') {
+      try {
+        const parsed = JSON.parse(schedule);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (e) {
+        console.error("Error parsing schedule:", e);
+        return [];
+      }
+    }
+    // If all else fails, return empty array
+    return [];
+  };
+
+  // Function to fetch routes and schedules
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      // Fetch routes
+      const { data: routesData, error: routesError } = await supabase
+        .from("optimized_routes")
+        .select("*")
+        .order("name");
         
-        // Add some dummy data if no routes found
-        if (!routesResponse.data || routesResponse.data.length === 0) {
-          const dummyRoutes = [
-            { id: "1", name: "Downtown Loop", duration: 45, avg_priority: 8 },
-            { id: "2", name: "Airport Express", duration: 30, avg_priority: 9 },
-            { id: "3", name: "Suburb Connector", duration: 60, avg_priority: 5 }
-          ];
-          setRoutes(dummyRoutes);
-        }
-        
-        // After loading routes, fetch existing schedules
-        return supabase.from("schedule").select("*")
-          .then((schedulesResponse) => {
-            if (schedulesResponse.error) throw schedulesResponse.error
-            
-            if (schedulesResponse.data && schedulesResponse.data.length > 0) {
-              // Get the routes that are now in state
-              const currentRoutes = loadedRoutes.length > 0 ? loadedRoutes : dummyRoutes;
-              
-              // Format the schedules to match our component's expected structure
-              const formattedSchedules = schedulesResponse.data.map(schedule => {
-                const matchingRoute = currentRoutes.find(r => r.id === schedule.route_id) || {};
-                
-                // Calculate frequency based on priority if available
-                const normalized_priority = Math.max(1, Math.min(10, matchingRoute.avg_priority || 5))
-                const frequency = Math.floor(40 - ((normalized_priority - 1) / 9) * 30)
-                
-                return {
-                  route_id: schedule.route_id,
-                  name: matchingRoute.name || `Route ${schedule.route_id.substring(0, 8)}`,
-                  avg_priority: matchingRoute.avg_priority || 5,
-                  estimated_time: matchingRoute.duration || 30,
-                  frequency: frequency,
-                  schedule: schedule.schedule || []
-                };
-              });
-              
-              setGeneratedSchedules(formattedSchedules);
-              
-              // Calculate employee counts
-              const { morningEmp, eveningEmp } = calculateEmployeeRequirements(
-                formattedSchedules,
-                [morningShiftStart, morningShiftEnd],
-                [eveningShiftStart, eveningShiftEnd],
-                requiredWorkTime
-              );
-              
-              setMorningEmployees(morningEmp);
-              setEveningEmployees(eveningEmp);
-            }
-          });
-      })
-      .catch((error) => {
-        console.error("Error loading data:", error)
-        toast({
-          title: "Error",
-          description: "Failed to load data",
-          variant: "destructive",
-        })
-        
-        // Add dummy routes on error too
-        const dummyRoutes = [
+      if (routesError) throw routesError;
+      
+      let loadedRoutes = routesData || [];
+      let dummyRoutes = [];
+      
+      // Add dummy data if no routes found
+      if (!routesData || routesData.length === 0) {
+        dummyRoutes = [
           { id: "1", name: "Downtown Loop", duration: 45, avg_priority: 8 },
           { id: "2", name: "Airport Express", duration: 30, avg_priority: 9 },
           { id: "3", name: "Suburb Connector", duration: 60, avg_priority: 5 }
         ];
-        setRoutes(dummyRoutes);
-      })
-      .finally(() => {
-        setLoading(false)
-      })
-  }, [])
+        loadedRoutes = dummyRoutes;
+      }
+      
+      setRoutes(loadedRoutes);
+      
+      // Fetch schedules
+      const { data: schedulesData, error: schedulesError } = await supabase
+        .from("schedule")
+        .select("*");
+        
+      if (schedulesError) throw schedulesError;
+      
+      if (schedulesData && schedulesData.length > 0) {
+        // Format the schedules
+        const formattedSchedules = schedulesData.map(schedule => {
+          const matchingRoute = loadedRoutes.find(r => r.id === schedule.route_id) || {};
+          
+          // Calculate frequency based on priority if available
+          const normalized_priority = Math.max(1, Math.min(10, matchingRoute.avg_priority || 5));
+          const frequency = Math.floor(40 - ((normalized_priority - 1) / 9) * 30);
+          
+          return {
+            route_id: schedule.route_id,
+            name: matchingRoute.name || `Route ${schedule.route_id.substring(0, 8)}`,
+            avg_priority: matchingRoute.avg_priority || 5,
+            estimated_time: matchingRoute.duration || 30,
+            frequency: frequency,
+            schedule: ensureScheduleIsArray(schedule.schedule)
+          };
+        });
+        
+        setGeneratedSchedules(formattedSchedules);
+        
+        // Calculate employee counts
+        const { morningEmp, eveningEmp } = calculateEmployeeRequirements(
+          formattedSchedules,
+          [morningShiftStart, morningShiftEnd],
+          [eveningShiftStart, eveningShiftEnd],
+          requiredWorkTime
+        );
+        
+        setMorningEmployees(morningEmp);
+        setEveningEmployees(eveningEmp);
+      } else {
+        setGeneratedSchedules([]);
+        setMorningEmployees(0);
+        setEveningEmployees(0);
+      }
+    } catch (error) {
+      console.error("Error loading data:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load data",
+        variant: "destructive",
+      });
+      
+      // Add dummy routes on error
+      const dummyRoutes = [
+        { id: "1", name: "Downtown Loop", duration: 45, avg_priority: 8 },
+        { id: "2", name: "Airport Express", duration: 30, avg_priority: 9 },
+        { id: "3", name: "Suburb Connector", duration: 60, avg_priority: 5 }
+      ];
+      setRoutes(dummyRoutes);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // On initial component mount, fetch data
+  useEffect(() => {
+    fetchData();
+  }, []);
 
   // Helper function to calculate employee requirements
   const calculateEmployeeRequirements = (schedules, morningShift, eveningShift, requiredWorkTime) => {
@@ -232,7 +262,12 @@ export function WorkerScheduler() {
     let totalEveningMinutes = 0;
 
     schedules.forEach(route => {
-      route.schedule.forEach(departureTime => {
+      const routeSchedule = ensureScheduleIsArray(route.schedule);
+      
+      routeSchedule.forEach(departureTime => {
+        // Handle empty or undefined departureTime
+        if (!departureTime) return;
+        
         const [hours, minutes] = departureTime.split(':').map(Number);
         let hour = hours;
 
@@ -241,7 +276,7 @@ export function WorkerScheduler() {
           hour += 24;
         }
 
-        const totalWorkMinutes = route.estimated_time;
+        const totalWorkMinutes = route.estimated_time || 30;
 
         // Assign to morning or evening shift
         if (morningShift[0] <= hour && hour < morningShift[1]) {
@@ -254,8 +289,8 @@ export function WorkerScheduler() {
 
     // Calculate required employees with a buffer
     const adjustedRequiredWorkTime = requiredWorkTime * 0.9;
-    const morningEmployees = Math.ceil(totalMorningMinutes / adjustedRequiredWorkTime);
-    const eveningEmployees = Math.ceil(totalEveningMinutes / adjustedRequiredWorkTime);
+    const morningEmployees = Math.ceil(totalMorningMinutes / adjustedRequiredWorkTime) || 0;
+    const eveningEmployees = Math.ceil(totalEveningMinutes / adjustedRequiredWorkTime) || 0;
 
     return {
       morningEmp: morningEmployees,
@@ -277,7 +312,10 @@ export function WorkerScheduler() {
   
     try {
       // Delete existing schedules before generating new ones
-      const { error: deleteError } = await supabase.from("schedule").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+      const { error: deleteError } = await supabase
+        .from("schedule")
+        .delete()
+        .neq("id", "00000000-0000-0000-0000-000000000000");
   
       if (deleteError) throw deleteError;
   
@@ -306,14 +344,14 @@ export function WorkerScheduler() {
         schedule: route.schedule
       }));
   
-      const { error: insertError } = await supabase.from("schedule").insert(scheduleEntries);
+      const { error: insertError } = await supabase
+        .from("schedule")
+        .insert(scheduleEntries);
   
       if (insertError) throw insertError;
   
-      // Update state with the generated data
-      setGeneratedSchedules(scheduledRoutes);
-      setMorningEmployees(morningEmp);
-      setEveningEmployees(eveningEmp);
+      // Fetch the updated data from the database instead of setting it directly
+      await fetchData();
   
       toast({
         title: "Success",
@@ -685,7 +723,7 @@ export function WorkerScheduler() {
         </CardContent>
       </Card>
       
-      {/* Always display the Generated Route Schedules section */}
+      {/* Generated Route Schedules section */}
       <Card className="mt-6">
         <CardHeader>
           <CardTitle>Generated Route Schedules</CardTitle>
@@ -699,24 +737,25 @@ export function WorkerScheduler() {
                     <TableHead>Route</TableHead>
                     <TableHead>Priority</TableHead>
                     <TableHead>Frequency</TableHead>
+                    <TableHead>Duration</TableHead>
                     <TableHead>Departures</TableHead>
-                    <TableHead className="w-8"></TableHead>
+                    <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {generatedSchedules.map((route) => (
                     <React.Fragment key={route.route_id}>
                       <TableRow>
-                        <TableCell>{route.name}</TableCell>
-                        <TableCell>{route.avg_priority.toFixed(1)}</TableCell>
+                        <TableCell className="font-medium">{route.name}</TableCell>
+                        <TableCell>{route.avg_priority}</TableCell>
                         <TableCell>{route.frequency} min</TableCell>
-                        <TableCell>{route.schedule.length}</TableCell>
+                        <TableCell>{route.estimated_time} min</TableCell>
+                        <TableCell>{ensureScheduleIsArray(route.schedule).length}</TableCell>
                         <TableCell>
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             onClick={() => toggleOpenItem(route.route_id)}
-                            className="p-0 h-8 w-8"
                           >
                             {openItems[route.route_id] ? (
                               <ChevronUp className="h-4 w-4" />
@@ -728,16 +767,21 @@ export function WorkerScheduler() {
                       </TableRow>
                       {openItems[route.route_id] && (
                         <TableRow>
-                          <TableCell colSpan={5} className="p-0 border-t-0">
-                            <div className="bg-muted/30 p-4">
-                              <h4 className="text-sm font-medium mb-2">Schedule Details</h4>
-                              <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
-                              {(route?.schedule ?? []).map((time, idx) => (
-                                  <div key={idx} className="bg-secondary p-2 rounded flex items-center text-sm">
-                                    <Clock className="h-3 w-3 mr-1" />
-                                    {time}
-                                  </div>
-                                ))}
+                          <TableCell colSpan={6} className="p-4">
+                            <div className="bg-muted p-4 rounded-md">
+                              <h4 className="font-semibold mb-2">Departure Times</h4>
+                              <div className="flex flex-wrap gap-2">
+                                {ensureScheduleIsArray(route.schedule)
+                                  .sort()
+                                  .map((time, idx) => (
+                                    <div
+                                      key={idx}
+                                      className="px-2 py-1 rounded-full bg-primary/10 text-primary text-sm flex items-center"
+                                    >
+                                      <Clock className="h-3 w-3 mr-1" />
+                                      {time}
+                                    </div>
+                                  ))}
                               </div>
                             </div>
                           </TableCell>
@@ -749,15 +793,66 @@ export function WorkerScheduler() {
               </Table>
             </div>
           ) : (
-            <div className="text-center py-8 border rounded-md">
-              <p className="text-muted-foreground">No schedules generated yet</p>
-              <p className="text-sm text-muted-foreground mt-2">
-                Click the "Generate Schedule" button above to create route schedules
+            <div className="p-8 text-center">
+              <p className="text-muted-foreground">
+                No schedules have been generated yet.
               </p>
+              <Button 
+                onClick={generateSchedules}
+                disabled={generating}
+                className="mt-4"
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Generate Now
+              </Button>
             </div>
           )}
         </CardContent>
       </Card>
+      
+      {/* Routes List */}
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle>Available Routes</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {routes.length > 0 ? (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Route Name</TableHead>
+                    <TableHead>Duration</TableHead>
+                    <TableHead>Priority</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {routes.map((route) => (
+                    <TableRow key={route.id}>
+                      <TableCell className="font-medium">{route.name}</TableCell>
+                      <TableCell>{route.duration || "30"} min</TableCell>
+                      <TableCell>{route.avg_priority || "5"}/10</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          ) : (
+            <div className="p-8 text-center">
+              <p className="text-muted-foreground">No routes available.</p>
+              <Button 
+                onClick={fetchData}
+                disabled={loading}
+                className="mt-4"
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Refresh
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+      
       <Toaster />
     </div>
   );

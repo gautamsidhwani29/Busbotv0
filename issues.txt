@@ -1,6 +1,0 @@
-add a way to add both bus stops and depot
-remove the stop ID from both Bus stop page and routes page also add the name and priority in the routes page
-worker page should have depot name as a insert option insted of depot id and it should be a drop downmenu
-schedule page should have the option to modify (WORK_START, WORK_END, 2 PEAK_HOURS, MORNING_SHIFT time, EVENING_SHIFT time, and minimum REQUIRED_WORK_TIME = 420)
-the worker page should have a button to assign schedule to the crew and the schedule page should have a button to genrate a crew
-On the Map page there is alot of unwanted text that is to be removed
