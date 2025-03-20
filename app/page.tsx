@@ -25,7 +25,7 @@ export default function Home() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-12">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-[]">
           <Card>
             <CardHeader>
               <div className="flex items-center justify-center mb-4">
@@ -46,23 +46,8 @@ export default function Home() {
               <div className="flex items-center justify-center mb-4">
                 <UserCog className="h-12 w-12 text-primary" />
               </div>
-              <CardTitle className="text-xl text-center">Worker Dashboard</CardTitle>
-              <CardDescription className="text-center">View your assigned routes and schedules</CardDescription>
-            </CardHeader>
-            <CardContent className="flex justify-center">
-              <Link href="/login">
-                <Button size="lg">Login</Button>
-              </Link>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-center mb-4">
-                <UserCog className="h-12 w-12 text-primary" />
-              </div>
-              <CardTitle className="text-xl text-center">Admin Dashboard</CardTitle>
-              <CardDescription className="text-center">Manage stops, routes, and worker schedules</CardDescription>
+              <CardTitle className="text-xl text-center">Login</CardTitle>
+              <CardDescription className="text-center">Login as a Worker or Admin</CardDescription>
             </CardHeader>
             <CardContent className="flex justify-center">
               <Link href="/login">
@@ -73,9 +58,9 @@ export default function Home() {
         </div>
       </main>
 
-      <footer className="border-t border-border py-6">
+      <footer className="border-t border-border mt-[320px] py-6">
         <div className="container mx-auto px-4 text-center text-muted-foreground">
-          <p>© 2025 Bus Route Optimization System. All rights reserved.</p>
+          <p>© 2025 Bus Route Optimization System by Team Bus Bot.</p>
         </div>
       </footer>
     </div>
