@@ -735,9 +735,8 @@ export function WorkerScheduler() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Route</TableHead>
-                    <TableHead>Priority</TableHead>
+                    <TableHead>Avg_Priority</TableHead>
                     <TableHead>Frequency</TableHead>
-                    <TableHead>Duration</TableHead>
                     <TableHead>Departures</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
@@ -749,7 +748,6 @@ export function WorkerScheduler() {
                         <TableCell className="font-medium">{route.name}</TableCell>
                         <TableCell>{route.avg_priority}</TableCell>
                         <TableCell>{route.frequency} min</TableCell>
-                        <TableCell>{route.estimated_time} min</TableCell>
                         <TableCell>{ensureScheduleIsArray(route.schedule).length}</TableCell>
                         <TableCell>
                           <Button

@@ -10,8 +10,9 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { AlertCircle, CheckCircle, RefreshCw, Users } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { WorkerScheduler } from "./worker-scheduler";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { WorkerScheduler } from "./worker-scheduler";
+
 
 export function TransportApp() {
   return (
@@ -30,123 +31,71 @@ export function TransportApp() {
   );
 }
 
+class ScheduleEntry {
+  constructor(entry_id, route_id, schedule_time, duration) {
+    this.entry_id = entry_id;
+    this.route_id = route_id;
+    this.schedule_time = schedule_time;
+    this.duration = duration;
+    this.shift = this._calculate_shift();
+  }
+
+  _calculate_shift() {
+    try {
+      const hour = parseInt(this.schedule_time.split(':')[0]);
+      return (6 <= hour && hour < 14) ? 'morning' : 'evening';
+    } catch (error) {
+      return 'evening';
+    }
+  }
+}
+
+class Worker {
+  constructor(worker_id, name, phone_number) {
+    this.worker_id = worker_id;
+    this.name = name;
+    this.shift = (parseInt(phone_number.slice(-1)) % 2 === 0) ? 'morning' : 'evening';
+    this.assignments = [];
+    this.total_work_minutes = 0;
+  }
+}
+
 export function WorkerAssignment() {
   const [schedules, setSchedules] = useState([]);
   const [workers, setWorkers] = useState([]);
   const [assignments, setAssignments] = useState({});
   const [loading, setLoading] = useState(true);
   const [assigning, setAssigning] = useState(false);
-  const [fetchProgress, setFetchProgress] = useState(0);
   const [statsCard, setStatsCard] = useState({
     totalRoutes: 0,
     totalWorkers: 0,
     workersNeeded: 0,
     routesPerWorker: 0,
-    status: "pending" // pending, success, error
+    status: "pending"
   });
 
   useEffect(() => {
-    fetchDataInBatches();
+    fetchData();
   }, []);
 
-  // Process schedules and update stats
   useEffect(() => {
     if (schedules.length && workers.length) {
       calculateStats();
     }
   }, [schedules, workers]);
 
-  const fetchDataInBatches = async () => {
+  const fetchData = async () => {
     setLoading(true);
-    setFetchProgress(0);
-    
     try {
-      // Fetch workers first
-      const { data: workerData, error: workerError } = await supabase
-        .from("workers")
-        .select("*");
-
-      if (workerError) throw workerError;
-      setWorkers(workerData || []);
-      
-      // Use dummy workers if none exist
-      if (!workerData || workerData.length === 0) {
-        const dummyWorkers = Array.from({ length: 10 }, (_, i) => ({
-          id: `w-${i+1}`,
-          name: `Worker ${i+1}`,
-          phone_number: `555-000-${1000+i}`,
-          employee_schedule: []
-        }));
-        setWorkers(dummyWorkers);
-      }
-      
-      setFetchProgress(30);
-      
-      // Fetch schedules in batches
-      let allSchedules = [];
-      let count = 0;
-      const batchSize = 500; // Supabase limit is 1000, but we'll use 500 to be safe
-      
-      // First, count the total number of schedule entries
-      const { count: totalCount, error: countError } = await supabase
-        .from("schedule")
-        .select("*", { count: "exact", head: true });
-        
-      if (countError) throw countError;
-      
-      const totalBatches = Math.ceil((totalCount || 1) / batchSize);
-      
-      // Fetch each batch
-      for (let i = 0; i < totalBatches; i++) {
-        const from = i * batchSize;
-        const to = from + batchSize - 1;
-        
-        const { data: batchData, error: batchError } = await supabase
-          .from("schedule")
-          .select("*")
-          .range(from, to);
-          
-        if (batchError) throw batchError;
-        
-        if (batchData && batchData.length > 0) {
-          allSchedules = [...allSchedules, ...batchData];
-        }
-        
-        // Update progress
-        count += batchData?.length || 0;
-        setFetchProgress(30 + Math.floor((count / (totalCount || 1)) * 60));
-      }
-      
-      // If no schedules found, use dummy data
-      if (allSchedules.length === 0) {
-        const dummySchedules = [];
-        const routes = ["Downtown Loop", "Airport Express", "Suburb Connector", "University Shuttle"];
-        
-        for (let i = 0; i < 40; i++) {
-          const routeIdx = i % routes.length;
-          const hourOffset = Math.floor(i / 4);
-          const hour = (6 + hourOffset) % 24;
-          const minute = (i % 4) * 15;
-          
-          dummySchedules.push({
-            id: `s-${i+1}`,
-            route_id: `r-${routeIdx+1}`,
-            route_name: routes[routeIdx],
-            schedule: `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`,
-            duration: 30 + (routeIdx * 10)
-          });
-        }
-        
-        allSchedules = dummySchedules;
-      }
-      
-      setSchedules(allSchedules);
-      setFetchProgress(100);
+      const scheduleEntries = await fetchScheduleData();
+      const workersData = await fetchWorkersInBatches();
+      setSchedules(scheduleEntries);
+      setWorkers(workersData);
     } catch (error) {
       console.error("Error fetching data:", error);
       toast({
         title: "Error",
-        description: "Failed to fetch data. Please try again.",
+        description: "Failed to fetch data.",
         variant: "destructive",
       });
     } finally {
@@ -154,121 +103,85 @@ export function WorkerAssignment() {
     }
   };
 
-  const calculateStats = () => {
-    const totalRoutes = schedules.length;
-    const totalWorkers = workers.length;
-    
-    // Calculate how many workers are needed based on routes
-    // Simple heuristic: each worker can handle 5-10 routes per day
-    const routesPerWorkerTarget = 8;
-    const workersNeeded = Math.ceil(totalRoutes / routesPerWorkerTarget);
-    const routesPerWorker = totalWorkers > 0 ? Math.ceil(totalRoutes / totalWorkers) : 0;
-    
-    const status = totalWorkers >= workersNeeded ? "success" : "error";
-    
-    setStatsCard({
-      totalRoutes,
-      totalWorkers,
-      workersNeeded,
-      routesPerWorker,
-      status
+  const fetchScheduleData = async () => {
+    const { data, error } = await supabase
+      .from("schedule")
+      .select("*, optimized_routes(duration)");
+
+    if (error) throw error;
+
+    const entries = [];
+    data.forEach(item => {
+      try {
+        const scheduleData = item.schedule || '[]';
+        const times = typeof scheduleData === 'string' ? JSON.parse(scheduleData) : scheduleData;
+        const routeData = item.optimized_routes;
+
+        times.forEach(time_str => {
+          entries.push(new ScheduleEntry(
+            item.id.toString(),
+            item.route_id.toString(),
+            time_str,
+            routeData.duration
+          ));
+        });
+      } catch (e) {
+        console.error("Skipping invalid schedule entry:", e);
+      }
     });
+    return entries;
+  };
+
+  const fetchWorkersInBatches = async () => {
+    const batchSize = 500; // Number of rows to fetch per batch
+    let allWorkers = [];
+    let from = 0;
+    let to = from + batchSize - 1;
+
+    while (true) {
+      const { data, error } = await supabase
+        .from("workers")
+        .select("*")
+        .range(from, to);
+
+      if (error) throw error;
+
+      if (data.length === 0) break; // No more data to fetch
+
+      allWorkers = allWorkers.concat(data);
+      from += batchSize;
+      to += batchSize;
+    }
+
+    return allWorkers.map(worker => new Worker(
+      worker.id.toString(),
+      worker.name,
+      worker.phone_number
+    ));
   };
 
   const assignSchedulesToWorkers = async () => {
-    if (schedules.length === 0) {
+    if (schedules.length === 0 || workers.length === 0) {
       toast({
         title: "Error",
-        description: "No schedules available to assign.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (workers.length === 0) {
-      toast({
-        title: "Error",
-        description: "No workers available for assignment.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (statsCard.status === "error") {
-      toast({
-        title: "Warning",
-        description: `Not enough workers. Need ${statsCard.workersNeeded} but only have ${statsCard.totalWorkers}.`,
+        description: "No schedules or workers available to assign.",
         variant: "destructive",
       });
       return;
     }
 
     setAssigning(true);
-    
     try {
-      // Group schedules by time slots to avoid conflicts
-      const schedulesByTime = {};
-      
-      schedules.forEach(schedule => {
-        const timeSlot = schedule.schedule || "unknown";
-        if (!schedulesByTime[timeSlot]) {
-          schedulesByTime[timeSlot] = [];
-        }
-        schedulesByTime[timeSlot].push(schedule);
-      });
-      
-      // Distribute schedules equally among workers
-      const workerAssignments = {};
-      workers.forEach(worker => {
-        workerAssignments[worker.id] = [];
-      });
-      
-      // Sort time slots chronologically
-      const timeSlots = Object.keys(schedulesByTime).sort();
-      
-      // Assign schedules to workers round-robin style
-      let workerIndex = 0;
-      
-      timeSlots.forEach(timeSlot => {
-        const timeslotSchedules = schedulesByTime[timeSlot];
-        
-        timeslotSchedules.forEach(schedule => {
-          // Find the worker with the least schedules at this point
-          const workerIds = Object.keys(workerAssignments);
-          workerIds.sort((a, b) => workerAssignments[a].length - workerAssignments[b].length);
-          
-          // Assign to the worker with the least schedules
-          workerAssignments[workerIds[0]].push({
-            schedule_id: schedule.id,
-            route_id: schedule.route_id,
-            route_name: schedule.route_name || `Route ${schedule.route_id}`,
-            departure_time: schedule.schedule,
-            duration: schedule.duration || 30
-          });
-        });
-      });
-      
-      // Save assignments
-      setAssignments(workerAssignments);
-      
-      // Update database (or simulate)
-      for (const workerId in workerAssignments) {
-        const workerSchedule = workerAssignments[workerId];
-        
-        // Update worker's schedule in the database
-        const { error } = await supabase
-          .from("workers")
-          .update({ employee_schedule: workerSchedule })
-          .eq("id", workerId);
-          
-        if (error) throw error;
-      }
-      
+      const updatedWorkers = assignSchedules(schedules, workers);
+      await saveWorkerSchedules(updatedWorkers);
+      setAssignments(updatedWorkers.reduce((acc, worker) => {
+        acc[worker.worker_id] = worker.assignments;
+        return acc;
+      }, {}));
       toast({
         title: "Success",
         description: "Schedules assigned successfully to workers.",
       });
-      
     } catch (error) {
       console.error("Error assigning schedules:", error);
       toast({
@@ -279,6 +192,79 @@ export function WorkerAssignment() {
     } finally {
       setAssigning(false);
     }
+  };
+
+  const assignSchedules = (scheduleEntries, workers) => {
+    const shiftWorkers = workers.reduce((acc, worker) => {
+      acc[worker.shift] = acc[worker.shift] || [];
+      acc[worker.shift].push(worker);
+      return acc;
+    }, {});
+
+    const shiftSchedules = scheduleEntries.reduce((acc, entry) => {
+      acc[entry.shift] = acc[entry.shift] || [];
+      acc[entry.shift].push(entry);
+      return acc;
+    }, {});
+
+    Object.entries(shiftSchedules).forEach(([shift, entries]) => {
+      const availableWorkers = shiftWorkers[shift] || [];
+      if (availableWorkers.length === 0) {
+        console.log(`No workers available for ${shift} shift!`);
+        return;
+      }
+
+      entries.sort((a, b) => new Date(`1970/01/01 ${a.schedule_time}`) - new Date(`1970/01/01 ${b.schedule_time}`));
+      availableWorkers.sort((a, b) => a.total_work_minutes - b.total_work_minutes);
+
+      entries.forEach(entry => {
+        const worker = availableWorkers.reduce((prev, curr) => 
+          prev.total_work_minutes < curr.total_work_minutes ? prev : curr
+        );
+
+        const endTime = new Date(`1970/01/01 ${entry.schedule_time}`);
+        endTime.setMinutes(endTime.getMinutes() + entry.duration);
+
+        worker.assignments.push({
+          route_id: entry.route_id,
+          start_time: entry.schedule_time,
+          end_time: endTime.toTimeString().slice(0, 5),
+          duration: entry.duration
+        });
+
+        worker.total_work_minutes += entry.duration;
+      });
+    });
+
+    return workers;
+  };
+
+  const saveWorkerSchedules = async (workers) => {
+    for (const worker of workers) {
+      const { error } = await supabase
+        .from("workers")
+        .update({ employee_schedule: worker.assignments })
+        .eq('id', worker.worker_id);
+
+      if (error) throw error;
+    }
+  };
+
+  const calculateStats = () => {
+    const totalRoutes = schedules.length;
+    const totalWorkers = workers.length;
+    const routesPerWorkerTarget = 8;
+    const workersNeeded = Math.ceil(totalRoutes / routesPerWorkerTarget);
+    const routesPerWorker = totalWorkers > 0 ? Math.ceil(totalRoutes / totalWorkers) : 0;
+    const status = totalWorkers >= workersNeeded ? "success" : "error";
+
+    setStatsCard({
+      totalRoutes,
+      totalWorkers,
+      workersNeeded,
+      routesPerWorker,
+      status
+    });
   };
 
   return (
@@ -294,7 +280,7 @@ export function WorkerAssignment() {
                 <RefreshCw className="h-4 w-4 animate-spin" />
                 <span>Loading data...</span>
               </div>
-              <Progress value={fetchProgress} />
+              <Progress value={statsCard.totalRoutes} />
             </div>
           ) : (
             <>
@@ -303,7 +289,7 @@ export function WorkerAssignment() {
                   <CardContent className="pt-6">
                     <div className="flex justify-between items-center">
                       <div>
-                        <p className="text-sm font-medium">Total Routes</p>
+                        <p className="text-sm font-medium">Total Trips</p>
                         <h3 className="text-2xl font-bold">{statsCard.totalRoutes}</h3>
                       </div>
                     </div>
@@ -342,7 +328,7 @@ export function WorkerAssignment() {
                 <div className="flex gap-2">
                   <Button 
                     variant="outline" 
-                    onClick={fetchDataInBatches}
+                    onClick={fetchData}
                     disabled={loading || assigning}
                   >
                     <RefreshCw className="h-4 w-4 mr-2" />
@@ -368,19 +354,17 @@ export function WorkerAssignment() {
                         <TableHeader>
                           <TableRow>
                             <TableHead>Name</TableHead>
-                            <TableHead>Phone</TableHead>
                             <TableHead>Assigned Routes</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {workers.map((worker) => (
-                            <TableRow key={worker.id}>
+                            <TableRow key={worker.worker_id}>
                               <TableCell>{worker.name}</TableCell>
-                              <TableCell>{worker.phone_number}</TableCell>
                               <TableCell>
-                                {assignments[worker.id] ? (
+                                {assignments[worker.worker_id] ? (
                                   <Badge variant="secondary">
-                                    {assignments[worker.id].length} routes
+                                    {assignments[worker.worker_id].length} routes
                                   </Badge>
                                 ) : (
                                   <Badge variant="outline">Unassigned</Badge>
