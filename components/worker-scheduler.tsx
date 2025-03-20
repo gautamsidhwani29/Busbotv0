@@ -732,7 +732,7 @@ export function WorkerScheduler() {
                             <div className="bg-muted/30 p-4">
                               <h4 className="text-sm font-medium mb-2">Schedule Details</h4>
                               <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
-                                {route.schedule.map((time, idx) => (
+                              {(route?.schedule ?? []).map((time, idx) => (
                                   <div key={idx} className="bg-secondary p-2 rounded flex items-center text-sm">
                                     <Clock className="h-3 w-3 mr-1" />
                                     {time}
