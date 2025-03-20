@@ -31,7 +31,7 @@ export default function Home() {
               <div className="flex items-center justify-center mb-4">
                 <MapPin className="h-12 w-12 text-primary" />
               </div>
-              <CardTitle className="text-xl text-center">View Routes</CardTitle>
+              <CardTitle className="text-xl text-center">View Bus Stops</CardTitle>
               <CardDescription className="text-center">Visualize and explore optimized bus routes</CardDescription>
             </CardHeader>
             <CardContent className="flex justify-center">
